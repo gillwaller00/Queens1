@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Retro Queens</title>
 <style>
-:root{--bg:#342a45;--panel:#f6d36b;--ink:#241f2d;--cream:#fff7df;--orange:#e98a3a;--bad:#b73535}
+:root{--bg:#342a45;--panel:#f6d36b;--ink:#241f2d;--cream:#fff7df;--orange:#e98a3a;--bad:#b73535;--win:#fff06a}
 *{box-sizing:border-box}
 body{margin:0;min-height:100vh;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:radial-gradient(circle at top,#584673,var(--bg));color:var(--cream);display:flex;justify-content:center;padding:12px}
 .app{width:min(96vw,740px)}
@@ -23,16 +23,18 @@ button:active{transform:translateY(2px);box-shadow:0 2px 0 var(--orange)}
 .cell.auto-x::after{content:"×";font-size:1.35em;font-weight:900;color:rgba(36,31,45,.38)}
 .cell.queen::after{content:"♛";font-size:1.25em;color:var(--ink);filter:drop-shadow(1px 2px 0 rgba(255,255,255,.42))}
 .cell.bad{outline:4px solid var(--bad);z-index:1}
+.cell.winQueen::after{animation:queenPulse .55s ease-in-out infinite alternate;color:#7b1fa2;font-size:1.75em}
+@keyframes queenPulse{from{transform:scale(1);filter:drop-shadow(0 0 0 var(--win))}to{transform:scale(1.35);filter:drop-shadow(0 0 10px var(--win))}}
 .rules{margin-top:14px;background:rgba(255,255,255,.09);padding:13px 15px;border-radius:16px;line-height:1.45}
 .rules strong{color:var(--panel)}
 </style>
 </head>
 <body>
 <main class="app">
-<header><h1>Retro Queens</h1><p class="subtitle">Deduction-friendly puzzles: tap once for X, twice for queen.</p></header>
+<header><h1>Retro Queens</h1><p class="subtitle">Tap once for X, twice for queen.</p></header>
 <section class="controls">
 <select id="difficulty"><option value="easy">Easy 6 × 6</option><option value="medium" selected>Medium 8 × 8</option><option value="hard">Hard 10 × 10</option></select>
-<button id="newGame">New game</button><button id="check">Check</button><button id="clear">Clear marks</button>
+<button id="newGame">New game</button><button id="undo">Undo</button><button id="check">Check</button><button id="clear">Clear marks</button>
 </section>
 <div id="status">Building puzzle…</div>
 <section class="board-wrap"><div id="board"></div></section>
@@ -41,76 +43,50 @@ button:active{transform:translateY(2px);box-shadow:0 2px 0 var(--orange)}
 <script>
 const palettes=["#f8dc83","#f5b47b","#8fd3d0","#eba1b6","#bad496","#c6a7e8","#f3a895","#98c5df","#e5cf88","#b7d9a9"];
 const settings={easy:6,medium:8,hard:10};
-let size=8,zones=[],solution=[],marks=new Map();
+let size=8,zones=[],solution=[],marks=new Map(),history=[],won=false;
 const board=document.getElementById("board"),status=document.getElementById("status"),difficulty=document.getElementById("difficulty");
 const key=(r,c)=>`${r},${c}`, mark=(r,c)=>marks.get(key(r,c))||0;
 function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function pushHistory(){history.push(new Map(marks)); if(history.length>80)history.shift()}
 function genSolution(n){
   const placed=[];
   function ok(r,c){return !placed.some(([rr,cc])=>cc===c||(Math.abs(rr-r)<=1&&Math.abs(cc-c)<=1))}
   function solve(r){if(r===n)return true;for(const c of shuffle([...Array(n).keys()])){if(ok(r,c)){placed.push([r,c]);if(solve(r+1))return true;placed.pop()}}return false}
   return solve(0)?placed:genSolution(n);
 }
-function makeZones(n,sol){
-  const z=Array.from({length:n},()=>Array(n).fill(-1)),front=[];
-  sol.forEach(([r,c],i)=>{z[r][c]=i;front.push([r,c,i])});
-  let left=n*n-n,guard=0;
-  while(left>0&&guard++<10000){
-    const [r,c,zi]=front[Math.floor(Math.random()*front.length)];
-    let done=false;
+function makeDeductionZones(n,sol){
+  const z=Array.from({length:n},()=>Array(n).fill(-1));
+  const order=shuffle([...Array(n).keys()]);
+  const forcedCount = difficulty.value==="easy" ? Math.ceil(n*.7) : difficulty.value==="medium" ? Math.ceil(n*.45) : Math.ceil(n*.25);
+
+  // Create several single-cell colour regions. These guarantee opening logical moves and a cascade.
+  order.slice(0,forcedCount).forEach(i=>{const [r,c]=sol[i]; z[r][c]=i;});
+
+  // Seed the remaining colour regions at their solution cell.
+  sol.forEach(([r,c],i)=>{if(z[r][c]===-1)z[r][c]=i;});
+
+  // Fill unassigned cells by growing regions, but do not let singleton forced regions grow.
+  const growable=[];
+  sol.forEach(([r,c],i)=>{if(!order.slice(0,forcedCount).includes(i))growable.push([r,c,i]);});
+  let left=n*n-n, guard=0;
+  while(left>0 && guard++<20000){
+    const [r,c,zi]=growable[Math.floor(Math.random()*growable.length)];
+    let added=false;
     for(const [dr,dc] of shuffle([[1,0],[-1,0],[0,1],[0,-1]])){
       const nr=r+dr,nc=c+dc;
-      if(nr>=0&&nr<n&&nc>=0&&nc<n&&z[nr][nc]<0){z[nr][nc]=zi;front.push([nr,nc,zi]);left--;done=true;break}
+      if(nr>=0&&nr<n&&nc>=0&&nc<n&&z[nr][nc]<0){
+        z[nr][nc]=zi;growable.push([nr,nc,zi]);left--;added=true;break;
+      }
     }
-    if(!done){
-      for(let rr=0;rr<n;rr++)for(let cc=0;cc<n;cc++)if(z[rr][cc]>=0){
+    if(!added){
+      for(let rr=0;rr<n;rr++)for(let cc=0;cc<n;cc++)if(z[rr][cc]>=0 && !order.slice(0,forcedCount).includes(z[rr][cc])){
         for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
-          const nr=rr+dr,nc=cc+dc;if(nr>=0&&nr<n&&nc>=0&&nc<n&&z[nr][nc]<0)front.push([rr,cc,z[rr][cc]]);
+          const nr=rr+dr,nc=cc+dc;if(nr>=0&&nr<n&&nc>=0&&nc<n&&z[nr][nc]<0)growable.push([rr,cc,z[rr][cc]]);
         }
       }
     }
   }
   return z;
-}
-function solveByLogic(n,z){
-  const qs=new Set(), xs=new Set();
-  const all=()=>{let a=[];for(let r=0;r<n;r++)for(let c=0;c<n;c++)a.push([r,c]);return a};
-  const qAt=(r,c)=>qs.has(key(r,c)), xAt=(r,c)=>xs.has(key(r,c));
-  function placeQ(r,c){
-    const k=key(r,c); if(qs.has(k))return false; qs.add(k);
-    for(let i=0;i<n;i++){if(i!==c)xs.add(key(r,i));if(i!==r)xs.add(key(i,c))}
-    for(let rr=0;rr<n;rr++)for(let cc=0;cc<n;cc++)if(!(rr===r&&cc===c)&&z[rr][cc]===z[r][c])xs.add(key(rr,cc));
-    for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){if(dr||dc){let nr=r+dr,nc=c+dc;if(nr>=0&&nr<n&&nc>=0&&nc<n)xs.add(key(nr,nc))}}
-    qs.forEach(k=>xs.delete(k)); return true;
-  }
-  function candidates(filter){
-    return all().filter(([r,c])=>!xAt(r,c)&&!qAt(r,c)&&filter(r,c));
-  }
-  let changed=true,steps=0;
-  while(changed&&steps<500){
-    changed=false;steps++;
-    for(let i=0;i<n;i++){
-      if(![...qs].some(k=>+k.split(",")[0]===i)){
-        let cand=candidates((r,c)=>r===i); if(cand.length===1){placeQ(...cand[0]);changed=true}
-      }
-      if(![...qs].some(k=>+k.split(",")[1]===i)){
-        let cand=candidates((r,c)=>c===i); if(cand.length===1){placeQ(...cand[0]);changed=true}
-      }
-      if(![...qs].some(k=>z[+k.split(",")[0]][+k.split(",")[1]]===i)){
-        let cand=candidates((r,c)=>z[r][c]===i); if(cand.length===1){placeQ(...cand[0]);changed=true}
-      }
-    }
-  }
-  return qs.size===n;
-}
-function buildPuzzle(){
-  size=settings[difficulty.value];marks.clear();
-  status.textContent="Building puzzle…";
-  let tries=0;
-  do{solution=genSolution(size);zones=makeZones(size,solution);tries++}
-  while(!solveByLogic(size,zones)&&tries<250);
-  render();
-  status.textContent=tries>=250?"Puzzle ready. This one may need a guess.":"Puzzle ready — should be solvable by elimination.";
 }
 function queens(){return [...marks.entries()].filter(([,v])=>v===2).map(([k])=>k.split(",").map(Number))}
 function autoX(){
@@ -128,26 +104,37 @@ function conflicts(){
   for(let i=0;i<q.length;i++)for(let j=i+1;j<q.length;j++){let [r1,c1]=q[i],[r2,c2]=q[j];if(Math.abs(r1-r2)<=1&&Math.abs(c1-c2)<=1){bad.add(key(r1,c1));bad.add(key(r2,c2))}}
   return bad;
 }
+function isSolved(){
+  const b=conflicts(),q=queens();if(b.size||q.length!==size)return false;
+  return new Set(q.map(x=>x[0])).size===size && new Set(q.map(x=>x[1])).size===size && new Set(q.map(([r,c])=>zones[r][c])).size===size;
+}
 function render(){
   const ax=autoX(),bad=conflicts();board.innerHTML="";board.style.gridTemplateColumns=`repeat(${size},1fr)`;
   for(let r=0;r<size;r++)for(let c=0;c<size;c++){
     const cell=document.createElement("button"),k=key(r,c),m=mark(r,c);
     cell.className="cell";cell.style.background=palettes[zones[r][c]%palettes.length];
     if(m===2)cell.classList.add("queen");else if(m===1)cell.classList.add("x");else if(ax.has(k))cell.classList.add("auto-x");
-    if(bad.has(k))cell.classList.add("bad");
-    cell.onclick=()=>{let cur=mark(r,c),next=cur===0?1:cur===1?2:0;if(next===0)marks.delete(k);else marks.set(k,next);render();updateStatus()};
+    if(bad.has(k))cell.classList.add("bad"); if(won&&m===2)cell.classList.add("winQueen");
+    cell.onclick=()=>{if(won)return;pushHistory();let cur=mark(r,c),next=cur===0?1:cur===1?2:0;if(next===0)marks.delete(k);else marks.set(k,next);render();updateStatus();};
     board.appendChild(cell);
   }
 }
-function updateStatus(){const b=conflicts(),q=queens().length;status.textContent=b.size?"There is a queen clash.":`${q}/${size} queens placed.`}
+function updateStatus(){
+  if(isSolved()){won=true;status.textContent="Groovy! Puzzle solved.";render();return}
+  const b=conflicts(),q=queens().length;status.textContent=b.size?"There is a queen clash.":`${q}/${size} queens placed.`;
+}
+function buildPuzzle(){
+  size=settings[difficulty.value];marks.clear();history=[];won=false;status.textContent="Building puzzle…";
+  solution=genSolution(size);zones=makeDeductionZones(size,solution);render();
+  status.textContent="Puzzle ready — there should be clear elimination moves.";
+}
 function checkWin(){
-  render();const b=conflicts(),q=queens();if(b.size){status.textContent="Not quite — at least one queen clashes.";return}
-  if(q.length!==size){status.textContent=`You need ${size} queens.`;return}
-  const rs=new Set(q.map(x=>x[0])),cs=new Set(q.map(x=>x[1])),zs=new Set(q.map(([r,c])=>zones[r][c]));
-  status.textContent=(rs.size===size&&cs.size===size&&zs.size===size)?"Groovy! Puzzle solved.":"Not quite — check rows, columns and colour zones.";
+  updateStatus();
+  if(!won&&conflicts().size===0)status.textContent=queens().length===size?"Not quite — check colour regions.":`You need ${size} queens.`;
 }
 document.getElementById("newGame").onclick=buildPuzzle;
-document.getElementById("clear").onclick=()=>{marks.clear();render();status.textContent="Board cleared."};
+document.getElementById("undo").onclick=()=>{if(history.length){marks=history.pop();won=false;render();updateStatus();}else status.textContent="Nothing to undo."};
+document.getElementById("clear").onclick=()=>{pushHistory();marks.clear();won=false;render();status.textContent="Board cleared."};
 document.getElementById("check").onclick=checkWin;
 difficulty.onchange=buildPuzzle;
 buildPuzzle();
