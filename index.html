@@ -64,6 +64,35 @@ button:active{transform:translateY(2px);box-shadow:0 2px 0 var(--orange)}
 }
 .badge.locked,.node.locked{opacity:.35;filter:grayscale(.4)}
 .node.done{background:#f6d36b}
+.modal{
+  position:fixed;inset:0;z-index:20;background:rgba(36,31,45,.78);
+  display:flex;align-items:center;justify-content:center;padding:18px
+}
+.modal.hidden{display:none}
+.modalCard{
+  width:min(92vw,720px);max-height:86vh;overflow:auto;background:#4f4168;
+  border:7px solid #f6d36b;border-radius:24px;padding:18px;color:#fff7df;
+  box-shadow:0 12px 0 rgba(0,0,0,.28)
+}
+.modalCard h2{margin:0 0 10px;color:#f6d36b;text-shadow:3px 3px 0 #e98a3a}
+.road{
+  position:relative;height:340px;border-radius:22px;background:
+  linear-gradient(#7fc9c6 0 22%,#b7d590 22% 42%,#f7dc6f 42% 60%,#8dbfdd 60% 78%,#c6a0df 78%);
+  overflow:hidden;margin:12px 0;border:4px solid #fff7df
+}
+.road svg{position:absolute;inset:0;width:100%;height:100%}
+.van{
+  position:absolute;font-size:2rem;transform:translate(-50%,-50%);
+  animation:vanBounce .7s ease-in-out infinite alternate
+}
+@keyframes vanBounce{from{margin-top:0}to{margin-top:-5px}}
+.stop{
+  position:absolute;transform:translate(-50%,-50%);background:#fff7df;color:#241f2d;
+  border-radius:999px;padding:6px 8px;font-weight:900;font-size:.75rem;white-space:nowrap;
+  box-shadow:0 3px 0 #e98a3a
+}
+.closeRow{text-align:center;margin-top:12px}
+.explainer{background:rgba(0,0,0,.15);border-radius:14px;padding:10px;margin:10px 0;font-weight:700}
 .rules{margin-top:14px;background:var(--card);padding:13px 15px;border-radius:16px;line-height:1.45}
 .rules strong{color:var(--panel)}
 .toast{
@@ -92,6 +121,8 @@ button:active{transform:translateY(2px);box-shadow:0 2px 0 var(--orange)}
   </select>
   <button id="newGame">New game</button>
   <button id="daily">Daily puzzle</button>
+  <button id="showStats">Stats</button>
+  <button id="showQuest">Quest</button>
   <button id="undo">Undo</button>
   <button id="check">Check</button>
   <button id="clear">Clear marks</button>
@@ -101,7 +132,7 @@ button:active{transform:translateY(2px);box-shadow:0 2px 0 var(--orange)}
 <div id="status">Loading puzzle…</div>
 <section class="board-wrap"><div id="board"></div></section>
 
-<section class="panel">
+<section class="panel hidden" id="progressPanel">
   <div class="stats" id="stats"></div>
   <div class="badges" id="badges"></div>
   <div style="width:100%;text-align:center;font-weight:900;color:#ffeeb6">Weekly Quest</div>
@@ -112,6 +143,46 @@ button:active{transform:translateY(2px);box-shadow:0 2px 0 var(--orange)}
   <strong>Rules:</strong> one queen in every row, every column and every colour region.
   Queens must not touch, including diagonally. They do not attack along full diagonals.
 </section>
+<div id="statsModal" class="modal hidden">
+  <div class="modalCard">
+    <h2>Your Stats</h2>
+    <div class="explainer">
+      New Game gives you a fresh version from the puzzle bank. Daily Puzzle gives the same dated challenge for that day and counts towards the Weekly Quest.
+    </div>
+    <div class="stats" id="modalStats"></div>
+    <h2>Badges</h2>
+    <div class="badges" id="modalBadges"></div>
+    <div class="closeRow"><button id="closeStats">Close</button></div>
+  </div>
+</div>
+
+<div id="questModal" class="modal hidden">
+  <div class="modalCard">
+    <h2>Weekly Road Trip Quest</h2>
+    <div class="explainer">
+      Solve Daily Puzzles to move Dolly north. Progress is saved on this phone/browser.
+    </div>
+    <div class="road" id="roadTrip">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+        <path d="M10,88 C20,72 12,58 30,52 C48,46 36,30 55,26 C72,22 68,12 90,8"
+          fill="none" stroke="#fff7df" stroke-width="7" stroke-linecap="round"/>
+        <path d="M10,88 C20,72 12,58 30,52 C48,46 36,30 55,26 C72,22 68,12 90,8"
+          fill="none" stroke="#e98a3a" stroke-width="3" stroke-linecap="round" stroke-dasharray="4 4"/>
+      </svg>
+      <div class="stop" style="left:10%;top:88%">Home</div>
+      <div class="stop" style="left:20%;top:69%">Forest camp</div>
+      <div class="stop" style="left:30%;top:52%">Cornwall festival</div>
+      <div class="stop" style="left:45%;top:39%">Hills</div>
+      <div class="stop" style="left:58%;top:25%">VW meet</div>
+      <div class="stop" style="left:72%;top:17%">Lakeside</div>
+      <div class="stop" style="left:90%;top:8%">Scotland</div>
+      <div class="van" id="camperVan">🚐</div>
+    </div>
+    <div class="map" id="questNodes"></div>
+    <div class="closeRow"><button id="closeQuest">Close</button></div>
+  </div>
+</div>
+
 <div id="toast" class="toast hidden"></div>
 </main>
 
@@ -164,7 +235,7 @@ const PUZZLES={
       [8,3,3,5,7,7,7,6,4,9],
       [8,5,5,5,7,7,7,6,6,9],
       [8,5,7,7,7,7,7,6,6,9],
-      [7,7,7,7,7,7,7,7,7,9],
+      [8,7,7,7,7,7,7,7,7,9],
       [8,8,8,8,8,9,9,9,9,9],
       [8,8,8,8,8,9,9,9,9,9]
     ]
@@ -354,7 +425,7 @@ function loadPuzzle(daily=false){
   size=p.size; zones=p.zones; solution=p.solution;
   marks.clear(); history=[]; won=false; moves=0; undos=0;
   render(); startTimer(); renderStats();
-  status.textContent=daily ? `Daily ${currentLevel} puzzle ready.` : `${currentLevel[0].toUpperCase()+currentLevel.slice(1)} puzzle ready.`;
+  status.textContent=daily ? `Daily ${currentLevel} puzzle ready — same challenge all day.` : `${currentLevel[0].toUpperCase()+currentLevel.slice(1)} puzzle ready.`;
 }
 function checkWin(){
   if(isSolved()){completePuzzle();return}
@@ -364,21 +435,42 @@ function checkWin(){
 function renderStats(){
   ensureProfile();
   const name=stats.player || "Player";
-  const lvl=stats.levels[currentLevel];
-  document.getElementById("stats").innerHTML=`
+  const allLevels=["easy","medium","hard"];
+  const statsHtml=`
     <div class="statBox">${name}</div>
-    <div class="statBox">${currentLevel.toUpperCase()}</div>
-    <div class="statBox">Solved: ${lvl.solved}</div>
-    <div class="statBox">Best: ${lvl.best===null?"—":fmt(lvl.best)}</div>
+    <div class="statBox">Current: ${currentLevel.toUpperCase()}</div>
+    ${allLevels.map(l=>{
+      const v=stats.levels[l];
+      return `<div class="statBox">${l.toUpperCase()} solved: ${v.solved}</div>
+              <div class="statBox">Best: ${v.best===null?"—":fmt(v.best)}</div>`;
+    }).join("")}
   `;
   const all=[
     ["first","First Crown"],["easy1","Easy Groover"],["medium1","Medium Maestro"],["hard1","Queen Supreme"],
     ["noUndo","Clean Sweep"],["daily","Daily Royal"],["speedy","Speedy Sovereign"]
   ];
-  document.getElementById("badges").innerHTML=all.map(([id,label])=>`<span class="badge ${stats.badges.includes(id)?"":"locked"}">${label}</span>`).join("");
+  const badgeHtml=all.map(([id,label])=>`<span class="badge ${stats.badges.includes(id)?"":"locked"}">${label}</span>`).join("");
   const done=Math.min(7,stats.weekly[weekKey()]||0);
-  document.getElementById("weeklyMap").innerHTML=[1,2,3,4,5,6,7].map(i=>`<span class="node ${i<=done?"done":"locked"}">${i<=done?"👑":"○"}</span>`).join("");
+  const nodeHtml=[1,2,3,4,5,6,7].map(i=>`<span class="node ${i<=done?"done":"locked"}">${i<=done?"👑":"○"}</span>`).join("");
+  document.getElementById("stats").innerHTML=statsHtml;
+  document.getElementById("badges").innerHTML=badgeHtml;
+  document.getElementById("weeklyMap").innerHTML=nodeHtml;
+  document.getElementById("modalStats").innerHTML=statsHtml;
+  document.getElementById("modalBadges").innerHTML=badgeHtml;
+  document.getElementById("questNodes").innerHTML=nodeHtml;
+
+  const stops=[
+    [10,88],[20,69],[30,52],[45,39],[58,25],[72,17],[90,8]
+  ];
+  const pos=stops[Math.max(0,Math.min(6,done-1))] || [10,88];
+  const van=document.getElementById("camperVan");
+  if(van){van.style.left=pos[0]+"%";van.style.top=pos[1]+"%";}
 }
+document.getElementById("showStats").onclick=()=>{renderStats();document.getElementById("statsModal").classList.remove("hidden");};
+document.getElementById("showQuest").onclick=()=>{renderStats();document.getElementById("questModal").classList.remove("hidden");};
+document.getElementById("closeStats").onclick=()=>document.getElementById("statsModal").classList.add("hidden");
+document.getElementById("closeQuest").onclick=()=>document.getElementById("questModal").classList.add("hidden");
+
 playerName.value=(stats.player||"");
 playerName.onchange=()=>{ensureProfile(); stats.player=playerName.value.trim(); saveStats(); renderStats();};
 document.getElementById("newGame").onclick=()=>loadPuzzle(false);
