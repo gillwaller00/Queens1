@@ -135,7 +135,7 @@ button:active{transform:translateY(2px);box-shadow:0 2px 0 var(--orange)}
 <section class="panel hidden" id="progressPanel">
   <div class="stats" id="stats"></div>
   <div class="badges" id="badges"></div>
-  <div style="width:100%;text-align:center;font-weight:900;color:#ffeeb6">Weekly Quest</div>
+  <div style="width:100%;text-align:center;font-weight:900;color:#ffeeb6">Road Trip Quest</div>
   <div class="map" id="weeklyMap"></div>
 </section>
 
@@ -147,7 +147,7 @@ button:active{transform:translateY(2px);box-shadow:0 2px 0 var(--orange)}
   <div class="modalCard">
     <h2>Your Stats</h2>
     <div class="explainer">
-      New Game gives you a fresh version from the puzzle bank. Daily Puzzle gives the same dated challenge for that day and counts towards the Weekly Quest.
+      New Game gives you a fresh version from the puzzle bank. Daily Puzzle gives the same dated challenge for that day and counts towards the Road Trip Quest.
     </div>
     <div class="stats" id="modalStats"></div>
     <h2>Badges</h2>
@@ -158,9 +158,9 @@ button:active{transform:translateY(2px);box-shadow:0 2px 0 var(--orange)}
 
 <div id="questModal" class="modal hidden">
   <div class="modalCard">
-    <h2>Weekly Road Trip Quest</h2>
+    <h2>Road Trip Quest</h2>
     <div class="explainer">
-      Solve Daily Puzzles to move Dolly north. Progress is saved on this phone/browser.
+      Complete Quest puzzles to move Dolly north. No daily limit, no streak penalty, and no missed-day problem — you can play one at a time or binge the whole route.
     </div>
     <div class="road" id="roadTrip">
       <svg viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -179,7 +179,7 @@ button:active{transform:translateY(2px);box-shadow:0 2px 0 var(--orange)}
       <div class="van" id="camperVan">🚐</div>
     </div>
     <div class="map" id="questNodes"></div>
-    <div class="closeRow"><button id="closeQuest">Close</button></div>
+    <div class="closeRow"><button id="playQuest">Play Quest Puzzle</button> <button id="resetQuest">Reset Trip</button> <button id="closeQuest">Close</button></div>
   </div>
 </div>
 
@@ -244,6 +244,7 @@ const PUZZLES={
 
 let size=8,zones=[],solution=[],marks=new Map(),history=[],won=false,currentLevel="medium";
 let isDaily=false, moves=0, undos=0, startedAt=Date.now(), elapsed=0, timerId=null;
+window.questMode=false;
 let stats=loadStats();
 
 const board=document.getElementById("board"),status=document.getElementById("status"),difficulty=document.getElementById("difficulty");
@@ -304,6 +305,7 @@ function ensureProfile(){
   if(!stats.badges)stats.badges=[];
   if(!stats.daily)stats.daily={};
   if(!stats.weekly)stats.weekly={};
+  if(typeof stats.questProgress!=="number")stats.questProgress=0;
 }
 function addBadge(id,label){
   ensureProfile();
@@ -397,7 +399,8 @@ function completePuzzle(){
   const wasBest=lvl.best===null || elapsed<lvl.best;
   lvl.solved++; if(wasBest)lvl.best=elapsed;
   stats.lastSolved=todayKey();
-  if(isDaily){stats.daily[todayKey()]=true; stats.weekly[weekKey()]=(stats.weekly[weekKey()]||0)+1}
+  if(isDaily){stats.daily[todayKey()]=true}
+  if(window.questMode){stats.questProgress=(stats.questProgress||0)+1}
   addBadge("first","First Crown");
   if(currentLevel==="easy")addBadge("easy1","Easy Groover");
   if(currentLevel==="medium")addBadge("medium1","Medium Maestro");
@@ -407,7 +410,11 @@ function completePuzzle(){
   if(elapsed<=120)addBadge("speedy","Speedy Sovereign");
   saveStats();
   status.textContent=`Groovy! Solved in ${fmt(elapsed)}.`;
-  if(wasBest)showToast(`New ${currentLevel} record!<br>${fmt(elapsed)}`);
+  if(window.questMode){
+    const progress=Math.min(7,stats.questProgress||0);
+    if(progress>=7)showToast(`Road trip complete!<br>Dolly reached Scotland 🚐`);
+    else showToast(`Dolly moved on!<br>${progress}/7 waypoints`);
+  } else if(wasBest)showToast(`New ${currentLevel} record!<br>${fmt(elapsed)}`);
   renderStats(); render();
 }
 function updateStatus(){
@@ -416,16 +423,16 @@ function updateStatus(){
   status.textContent=bad.size ? "There is a queen clash." : `${q}/${size} queens placed.`;
   updateTimer();
 }
-function loadPuzzle(daily=false){
+function loadPuzzle(daily=false, quest=false){
   ensureProfile();
-  currentLevel=difficulty.value; isDaily=daily;
+  currentLevel=difficulty.value; isDaily=daily; window.questMode=quest;
   const base=PUZZLES[currentLevel][0];
   const seed=daily ? `${todayKey()}-${currentLevel}` : `${Date.now()}-${Math.random()}-${currentLevel}`;
   const p=transformPuzzle(base,seed);
   size=p.size; zones=p.zones; solution=p.solution;
   marks.clear(); history=[]; won=false; moves=0; undos=0;
   render(); startTimer(); renderStats();
-  status.textContent=daily ? `Daily ${currentLevel} puzzle ready — same challenge all day.` : `${currentLevel[0].toUpperCase()+currentLevel.slice(1)} puzzle ready.`;
+  status.textContent=quest ? `Quest puzzle ready — solve to move Dolly.` : (daily ? `Daily ${currentLevel} puzzle ready — same challenge all day.` : `${currentLevel[0].toUpperCase()+currentLevel.slice(1)} puzzle ready.`);
 }
 function checkWin(){
   if(isSolved()){completePuzzle();return}
@@ -450,7 +457,7 @@ function renderStats(){
     ["noUndo","Clean Sweep"],["daily","Daily Royal"],["speedy","Speedy Sovereign"]
   ];
   const badgeHtml=all.map(([id,label])=>`<span class="badge ${stats.badges.includes(id)?"":"locked"}">${label}</span>`).join("");
-  const done=Math.min(7,stats.weekly[weekKey()]||0);
+  const done=Math.min(7,stats.questProgress||0);
   const nodeHtml=[1,2,3,4,5,6,7].map(i=>`<span class="node ${i<=done?"done":"locked"}">${i<=done?"👑":"○"}</span>`).join("");
   document.getElementById("stats").innerHTML=statsHtml;
   document.getElementById("badges").innerHTML=badgeHtml;
@@ -470,19 +477,30 @@ document.getElementById("showStats").onclick=()=>{renderStats();document.getElem
 document.getElementById("showQuest").onclick=()=>{renderStats();document.getElementById("questModal").classList.remove("hidden");};
 document.getElementById("closeStats").onclick=()=>document.getElementById("statsModal").classList.add("hidden");
 document.getElementById("closeQuest").onclick=()=>document.getElementById("questModal").classList.add("hidden");
+document.getElementById("playQuest").onclick=()=>{
+  document.getElementById("questModal").classList.add("hidden");
+  loadPuzzle(false,true);
+};
+document.getElementById("resetQuest").onclick=()=>{
+  ensureProfile();
+  stats.questProgress=0;
+  saveStats();
+  renderStats();
+  showToast("Road trip reset<br>Dolly is back at the start");
+};
 
 playerName.value=(stats.player||"");
 playerName.onchange=()=>{ensureProfile(); stats.player=playerName.value.trim(); saveStats(); renderStats();};
-document.getElementById("newGame").onclick=()=>loadPuzzle(false);
-document.getElementById("daily").onclick=()=>loadPuzzle(true);
+document.getElementById("newGame").onclick=()=>loadPuzzle(false,false);
+document.getElementById("daily").onclick=()=>loadPuzzle(true,false);
 document.getElementById("undo").onclick=()=>{
   if(history.length){marks=history.pop();won=false;undos++;render();updateStatus()}
   else status.textContent="Nothing to undo.";
 };
 document.getElementById("clear").onclick=()=>{pushHistory();marks.clear();won=false;moves++;render();status.textContent="Board cleared.";};
 document.getElementById("check").onclick=checkWin;
-difficulty.onchange=()=>loadPuzzle(false);
-ensureProfile(); loadPuzzle(false);
+difficulty.onchange=()=>loadPuzzle(false,false);
+ensureProfile(); loadPuzzle(false,false);
 </script>
 </body>
 </html>
