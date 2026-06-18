@@ -19,31 +19,36 @@ function countSolutions(n,z,limit=2){const rows=[...Array(n).keys()],placed=[],c
 function logicSolvable(n,z){
   const qs=new Set(), xs=new Set();
   const k=(r,c)=>`${r},${c}`;
+  const allCells=()=>{let a=[];for(let r=0;r<n;r++)for(let c=0;c<n;c++)a.push([r,c]);return a};
   const qCells=()=>[...qs].map(s=>s.split(",").map(Number));
-  function isQ(r,c){return qs.has(k(r,c))}
-  function isX(r,c){return xs.has(k(r,c))}
+  const isQ=(r,c)=>qs.has(k(r,c));
+  const isX=(r,c)=>xs.has(k(r,c));
+  function componentCells(sr,sc){
+    const zone=z[sr][sc], seen=new Set([k(sr,sc)]), stack=[[sr,sc]], out=[];
+    while(stack.length){
+      const [r,c]=stack.pop(); out.push([r,c]);
+      for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nr=r+dr,nc=c+dc, kk=k(nr,nc);
+        if(nr>=0&&nr<n&&nc>=0&&nc<n&&z[nr][nc]===zone&&!seen.has(kk)){
+          seen.add(kk); stack.push([nr,nc]);
+        }
+      }
+    }
+    return out;
+  }
   function placeQ(r,c){
-    const kk=k(r,c);
-    if(qs.has(kk))return false;
-    qs.add(kk);
-    for(let i=0;i<n;i++){if(i!==c)xs.add(k(r,i));if(i!==r)xs.add(k(i,c))}
-    for(let rr=0;rr<n;rr++)for(let cc=0;cc<n;cc++)if(!(rr===r&&cc===c)&&z[rr][cc]===z[r][c])xs.add(k(rr,cc));
+    const kk=k(r,c); if(qs.has(kk))return false; qs.add(kk);
+    for(let i=0;i<n;i++){if(i!==c)xs.add(k(r,i)); if(i!==r)xs.add(k(i,c))}
+    for(const [rr,cc] of componentCells(r,c)){ if(!(rr===r&&cc===c)) xs.add(k(rr,cc)); }
     for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++)if(dr||dc){
       const nr=r+dr,nc=c+dc;if(nr>=0&&nr<n&&nc>=0&&nc<n)xs.add(k(nr,nc));
     }
-    qs.forEach(v=>xs.delete(v));
-    return true;
+    qs.forEach(v=>xs.delete(v)); return true;
   }
-  function candidatesFor(type,i){
-    const out=[];
-    for(let r=0;r<n;r++)for(let c=0;c<n;c++){
-      if(isQ(r,c)||isX(r,c))continue;
-      if(type==="row"&&r!==i)continue;
-      if(type==="col"&&c!==i)continue;
-      if(type==="zone"&&z[r][c]!==i)continue;
-      out.push([r,c]);
-    }
-    return out;
+  function groupCells(type,i){
+    if(type==="row")return allCells().filter(([r])=>r===i);
+    if(type==="col")return allCells().filter(([,c])=>c===i);
+    return allCells().filter(([r,c])=>z[r][c]===i);
   }
   function hasQueen(type,i){
     for(const [r,c] of qCells()){
@@ -53,31 +58,68 @@ function logicSolvable(n,z){
     }
     return false;
   }
-  let changed=true, guard=0, placements=0;
-  while(changed && guard++<200){
+  function candidatesFor(type,i){
+    return groupCells(type,i).filter(([r,c])=>!isQ(r,c)&&!isX(r,c));
+  }
+  function impossibleAfterAssumingQueen(r,c){
+    const saveQ=new Set(qs), saveX=new Set(xs);
+    placeQ(r,c);
+    let impossible=false;
+    for(const type of ["row","col","zone"]){
+      for(let i=0;i<n;i++){
+        if(!hasQueen(type,i)&&candidatesFor(type,i).length===0)impossible=true;
+      }
+    }
+    qs.clear(); saveQ.forEach(v=>qs.add(v));
+    xs.clear(); saveX.forEach(v=>xs.add(v));
+    return impossible;
+  }
+  let changed=true, guard=0;
+  while(changed && guard++<500){
     changed=false;
     for(const type of ["row","col","zone"]){
       for(let i=0;i<n;i++){
         if(hasQueen(type,i))continue;
         const cand=candidatesFor(type,i);
-        if(cand.length===1){
-          placeQ(cand[0][0],cand[0][1]);
-          placements++;
-          changed=true;
-        }
+        if(cand.length===1){placeQ(cand[0][0],cand[0][1]); changed=true;}
       }
+    }
+    if(changed)continue;
+    for(const [r,c] of allCells()){
+      if(isQ(r,c)||isX(r,c))continue;
+      if(impossibleAfterAssumingQueen(r,c)){xs.add(k(r,c)); changed=true;}
     }
   }
   return qs.size===n;
-}
-function buildGeneratedPuzzle(level,seed){const rnd=makeRng(seed),n=level==="easy"?6:level==="medium"?8:10,maxTries=level==="hard"?420:650;let fallback=null;for(let t=0;t<maxTries;t++){const sol=generateSolution(n,rnd),z=growConnectedZones(n,sol,rnd),s=zoneSizes(z,n);if(Math.max(...s)>Math.ceil(n+6)||!allConnected(z,n))continue;if(!fallback)fallback={size:n,zones:z,solution:sol,unique:false};if(logicSolvable(n,z))return {size:n,zones:z,solution:sol,unique:true,logic:true}}return fallback}
-function updateTimer(){if(!won)elapsed=Math.floor((Date.now()-startedAt)/1000);timerLine.textContent=`Time ${fmt(elapsed)} · Moves ${moves} · Undos ${undos}`}function startTimer(){clearInterval(timerId);startedAt=Date.now();elapsed=0;timerId=setInterval(updateTimer,500);updateTimer()}function queens(){return [...marks.entries()].filter(([,v])=>v===2).map(([k])=>k.split(",").map(Number))}function autoX(){const a=new Set();for(const [r,c] of queens()){for(let i=0;i<size;i++){if(i!==c)a.add(key(r,i));if(i!==r)a.add(key(i,c))}for(let rr=0;rr<size;rr++)for(let cc=0;cc<size;cc++)if(!(rr===r&&cc===c)&&zones[rr][cc]===zones[r][c])a.add(key(rr,cc));for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++)if(dr||dc){const nr=r+dr,nc=c+dc;if(nr>=0&&nr<size&&nc>=0&&nc<size)a.add(key(nr,nc))}}for(const [r,c] of queens())a.delete(key(r,c));return a}
-function conflicts(){const q=queens(),bad=new Set();function check(fn){const m=new Map();q.forEach(([r,c])=>{const l=fn(r,c);if(!m.has(l))m.set(l,[]);m.get(l).push([r,c])});for(const g of m.values())if(g.length>1)g.forEach(([r,c])=>bad.add(key(r,c)))}check((r,c)=>r);check((r,c)=>c);check((r,c)=>zones[r][c]);for(let i=0;i<q.length;i++)for(let j=i+1;j<q.length;j++){const [r1,c1]=q[i],[r2,c2]=q[j];if(Math.abs(r1-r2)<=1&&Math.abs(c1-c2)<=1){bad.add(key(r1,c1));bad.add(key(r2,c2))}}return bad}function isSolved(){const q=queens();return !conflicts().size&&q.length===size&&new Set(q.map(([r])=>r)).size===size&&new Set(q.map(([,c])=>c)).size===size&&new Set(q.map(([r,c])=>zones[r][c])).size===size}function pushHistory(){history.push(new Map(marks));if(history.length>100)history.shift()}
+}function buildGeneratedPuzzle(level,seed){const rnd=makeRng(seed),n=level==="easy"?6:level==="medium"?8:10,maxTries=level==="hard"?900:1100;let fallback=null;for(let t=0;t<maxTries;t++){const sol=generateSolution(n,rnd),z=growConnectedZones(n,sol,rnd),s=zoneSizes(z,n);if(Math.max(...s)>Math.ceil(n+6)||!allConnected(z,n))continue;if(!fallback)fallback={size:n,zones:z,solution:sol,unique:false};if(logicSolvable(n,z))return {size:n,zones:z,solution:sol,unique:true,logic:true}}return fallback}
+function updateTimer(){if(!won)elapsed=Math.floor((Date.now()-startedAt)/1000);timerLine.textContent=`Time ${fmt(elapsed)} · Moves ${moves} · Undos ${undos}`}function startTimer(){clearInterval(timerId);startedAt=Date.now();elapsed=0;timerId=setInterval(updateTimer,500);updateTimer()}function queens(){return [...marks.entries()].filter(([,v])=>v===2).map(([k])=>k.split(",").map(Number))}function autoX(){
+  const a=new Set();
+  function componentCells(sr,sc){
+    const zone=zones[sr][sc], seen=new Set([key(sr,sc)]), stack=[[sr,sc]], out=[];
+    while(stack.length){
+      const [r,c]=stack.pop(); out.push([r,c]);
+      for(const [dr,dc] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const nr=r+dr,nc=c+dc,k=key(nr,nc);
+        if(nr>=0&&nr<size&&nc>=0&&nc<size&&zones[nr][nc]===zone&&!seen.has(k)){
+          seen.add(k); stack.push([nr,nc]);
+        }
+      }
+    }
+    return out;
+  }
+  for(const [r,c] of queens()){
+    for(let i=0;i<size;i++){if(i!==c)a.add(key(r,i));if(i!==r)a.add(key(i,c))}
+    for(const [rr,cc] of componentCells(r,c)){if(!(rr===r&&cc===c))a.add(key(rr,cc))}
+    for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++)if(dr||dc){const nr=r+dr,nc=c+dc;if(nr>=0&&nr<size&&nc>=0&&nc<size)a.add(key(nr,nc))}
+  }
+  for(const [r,c] of queens())a.delete(key(r,c));
+  return a;
+}function conflicts(){const q=queens(),bad=new Set();function check(fn){const m=new Map();q.forEach(([r,c])=>{const l=fn(r,c);if(!m.has(l))m.set(l,[]);m.get(l).push([r,c])});for(const g of m.values())if(g.length>1)g.forEach(([r,c])=>bad.add(key(r,c)))}check((r,c)=>r);check((r,c)=>c);check((r,c)=>zones[r][c]);for(let i=0;i<q.length;i++)for(let j=i+1;j<q.length;j++){const [r1,c1]=q[i],[r2,c2]=q[j];if(Math.abs(r1-r2)<=1&&Math.abs(c1-c2)<=1){bad.add(key(r1,c1));bad.add(key(r2,c2))}}return bad}function isSolved(){const q=queens();return !conflicts().size&&q.length===size&&new Set(q.map(([r])=>r)).size===size&&new Set(q.map(([,c])=>c)).size===size&&new Set(q.map(([r,c])=>zones[r][c])).size===size}function pushHistory(){history.push(new Map(marks));if(history.length>100)history.shift()}
 function cellFromPoint(x,y){const el=document.elementFromPoint(x,y);if(!el||!el.classList.contains("cell"))return null;return [Number(el.dataset.r),Number(el.dataset.c)]}function setX(r,c){const k=key(r,c);if(mark(r,c)!==1){marks.set(k,1);return true}return false}function cycleCell(r,c){const k=key(r,c),cur=mark(r,c),next=cur===0?1:cur===1?2:0;if(next===0)marks.delete(k);else marks.set(k,next)}
 function render(){const ax=autoX(),bad=conflicts();board.innerHTML="";board.style.gridTemplateColumns=`repeat(${size},1fr)`;for(let r=0;r<size;r++)for(let c=0;c<size;c++){const cell=document.createElement("button"),k=key(r,c),m=mark(r,c);cell.className="cell";cell.dataset.r=r;cell.dataset.c=c;cell.style.background=palettes[zones[r][c]%palettes.length];if(m===2)cell.classList.add("queen");else if(m===1)cell.classList.add("x");else if(ax.has(k))cell.classList.add("auto-x");if(bad.has(k))cell.classList.add("bad");if(won&&m===2)cell.classList.add("winQueen");board.appendChild(cell)}}
 board.addEventListener("pointerdown",e=>{if(won)return;const pos=cellFromPoint(e.clientX,e.clientY);if(!pos)return;e.preventDefault();dragging=true;dragMoved=false;dragTouched=new Set();dragStart=pos;board.setPointerCapture(e.pointerId)});board.addEventListener("pointermove",e=>{if(!dragging||won)return;const pos=cellFromPoint(e.clientX,e.clientY);if(!pos)return;const [r,c]=pos,k=key(r,c),[sr,sc]=dragStart;if(r!==sr||c!==sc)dragMoved=true;if(dragMoved&&!dragTouched.has(k)){if(dragTouched.size===0){pushHistory();setX(sr,sc)}dragTouched.add(k);if(setX(r,c))moves++;render();updateStatus()}});board.addEventListener("pointerup",e=>{if(!dragging||won)return;e.preventDefault();if(!dragMoved&&dragStart){pushHistory();cycleCell(dragStart[0],dragStart[1]);moves++;render();updateStatus()}dragging=false;dragStart=null;dragTouched=new Set()});board.addEventListener("pointercancel",()=>{dragging=false;dragStart=null;dragTouched=new Set()});
 function completePuzzle(){won=true;clearInterval(timerId);updateTimer();ensureProfile();const lvl=stats.levels[currentLevel],best=lvl.best===null||elapsed<lvl.best;lvl.solved++;if(best)lvl.best=elapsed;stats.lastSolved=todayKey();if(isDaily)stats.daily[todayKey()]=true;if(questMode)stats.questProgress=(stats.questProgress||0)+1;addBadge("first","First Crown");if(currentLevel==="easy")addBadge("easy1","Easy Groover");if(currentLevel==="medium")addBadge("medium1","Medium Maestro");if(currentLevel==="hard")addBadge("hard1","Queen Supreme");if(undos===0)addBadge("noUndo","Clean Sweep");if(isDaily)addBadge("daily","Daily Royal");if(elapsed<=120)addBadge("speedy","Speedy Sovereign");saveStats();status.textContent=`Groovy! Solved in ${fmt(elapsed)}.`;if(questMode){const p=Math.min(7,stats.questProgress||0);showToast(p>=7?`Road trip complete!<br>Dolly reached Scotland 🚐`:`Dolly moved on!<br>${p}/7 waypoints`)}else if(best)showToast(`New ${currentLevel} record!<br>${fmt(elapsed)}`);renderStats();render()}function updateStatus(){if(isSolved()){completePuzzle();return}const bad=conflicts(),q=queens().length;status.textContent=bad.size?"There is a queen clash.":`${q}/${size} queens placed.`;updateTimer()}
-function loadPuzzle(daily=false,quest=false){ensureProfile();currentLevel=difficulty.value;isDaily=daily;questMode=quest;marks.clear();history=[];won=false;moves=0;undos=0;status.textContent="Building fresh puzzle…";renderStats();setTimeout(()=>{const seed=daily?`${todayKey()}-${currentLevel}`:`${Date.now()}-${Math.random()}-${currentLevel}`,p=buildGeneratedPuzzle(currentLevel,seed);if(!p){status.textContent="Couldn’t build puzzle — try New game again.";return}size=p.size;zones=p.zones;solution=p.solution;render();startTimer();renderStats();status.textContent=quest?"Quest puzzle ready — solve to move Dolly.":(daily?`Daily ${currentLevel} puzzle ready — same challenge all day.`:`Fresh ${currentLevel} puzzle ready${p.logic?" — logic-tested.":"."}`)},40)}function checkWin(){if(isSolved()){completePuzzle();return}const bad=conflicts();status.textContent=bad.size?"Not quite — at least one queen clashes.":`You need ${size} queens.`}
+function loadPuzzle(daily=false,quest=false){ensureProfile();currentLevel=difficulty.value;isDaily=daily;questMode=quest;marks.clear();history=[];won=false;moves=0;undos=0;status.textContent="Building logic-tested puzzle…";renderStats();setTimeout(()=>{const seed=daily?`${todayKey()}-${currentLevel}`:`${Date.now()}-${Math.random()}-${currentLevel}`,p=buildGeneratedPuzzle(currentLevel,seed);if(!p){status.textContent="Couldn’t build puzzle — try New game again.";return}size=p.size;zones=p.zones;solution=p.solution;render();startTimer();renderStats();status.textContent=quest?"Quest puzzle ready — solve to move Dolly.":(daily?`Daily ${currentLevel} puzzle ready — same challenge all day.`:`Fresh ${currentLevel} puzzle ready${p.logic?" — logic-tested.":"."}`)},40)}function checkWin(){if(isSolved()){completePuzzle();return}const bad=conflicts();status.textContent=bad.size?"Not quite — at least one queen clashes.":`You need ${size} queens.`}
 function renderStats(){ensureProfile();const name=stats.player||"Player",levels=["easy","medium","hard"];document.getElementById("modalStats").innerHTML=`<div class="statBox">${name}</div><div class="statBox">Current: ${currentLevel.toUpperCase()}</div>`+levels.map(l=>{const v=stats.levels[l];return `<div class="statBox">${l.toUpperCase()} solved: ${v.solved}</div><div class="statBox">Best: ${v.best===null?"—":fmt(v.best)}</div>`}).join("");const all=[["first","First Crown"],["easy1","Easy Groover"],["medium1","Medium Maestro"],["hard1","Queen Supreme"],["noUndo","Clean Sweep"],["daily","Daily Royal"],["speedy","Speedy Sovereign"]];document.getElementById("modalBadges").innerHTML=all.map(([id,l])=>`<span class="badge ${stats.badges.includes(id)?"":"locked"}">${l}</span>`).join("");const done=Math.min(7,stats.questProgress||0);document.getElementById("questNodes").innerHTML=[1,2,3,4,5,6,7].map(i=>`<span class="node ${i<=done?"done":"locked"}">${i<=done?"👑":"○"}</span>`).join("");const stops=[[10,88],[20,69],[30,52],[45,39],[58,25],[72,17],[90,8]],pos=stops[Math.max(0,Math.min(6,done-1))]||[10,88],van=document.getElementById("camperVan");if(van){van.style.left=pos[0]+"%";van.style.top=pos[1]+"%"}}
 document.getElementById("showStats").onclick=()=>{renderStats();document.getElementById("statsModal").classList.remove("hidden")};document.getElementById("showQuest").onclick=()=>{renderStats();document.getElementById("questModal").classList.remove("hidden")};document.getElementById("closeStats").onclick=()=>document.getElementById("statsModal").classList.add("hidden");document.getElementById("closeQuest").onclick=()=>document.getElementById("questModal").classList.add("hidden");document.getElementById("playQuest").onclick=()=>{document.getElementById("questModal").classList.add("hidden");loadPuzzle(false,true)};document.getElementById("resetQuest").onclick=()=>{ensureProfile();stats.questProgress=0;saveStats();renderStats();showToast("Road trip reset<br>Dolly is back at the start")};playerName.value=stats.player||"";playerName.onchange=()=>{ensureProfile();stats.player=playerName.value.trim();saveStats();renderStats()};document.getElementById("newGame").onclick=()=>loadPuzzle(false,false);document.getElementById("daily").onclick=()=>loadPuzzle(true,false);document.getElementById("undo").onclick=()=>{if(history.length){marks=history.pop();won=false;undos++;render();updateStatus()}else status.textContent="Nothing to undo."};document.getElementById("clear").onclick=()=>{pushHistory();marks.clear();won=false;moves++;render();status.textContent="Board cleared."};document.getElementById("check").onclick=checkWin;difficulty.onchange=()=>loadPuzzle(false,false);ensureProfile();loadPuzzle(false,false);
 </script></body></html>
