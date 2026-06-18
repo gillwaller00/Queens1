@@ -151,12 +151,43 @@ function countSolutions(n,z,limit=2){
  solve(0);return count;
 }
 function impossibleSubset(n,z){
+ // Validity guard based on Hall-style confinement:
+ // If k colour regions are entirely confined to fewer than k columns/rows, the puzzle is impossible.
+ // Important: this checks colours FULLY CONTAINED in the subset, not merely colours that appear there.
  const all=[...Array(n).keys()];
- function subsets(arr){const out=[];for(let mask=1;mask<(1<<n);mask++){let a=[];for(let i=0;i<n;i++)if(mask&(1<<i))a.push(arr[i]);out.push(a)}return out}
- const subs=n<=10?subsets(all):[];
- const colorsIn=(cells)=>new Set(cells.map(([r,c])=>z[r][c])).size;
- for(const cols of subs){if(cols.length<2||cols.length>n-2)continue;let cells=[];for(let r=0;r<n;r++)for(const c of cols)cells.push([r,c]);if(colorsIn(cells)>cols.length)return true}
- for(const rows of subs){if(rows.length<2||rows.length>n-2)continue;let cells=[];for(const r of rows)for(let c=0;c<n;c++)cells.push([r,c]);if(colorsIn(cells)>rows.length)return true}
+ function colorCells(){
+  const out=Array.from({length:n},()=>[]);
+  for(let r=0;r<n;r++)for(let c=0;c<n;c++)out[z[r][c]].push([r,c]);
+  return out;
+ }
+ const cellsByColour=colorCells();
+ function subsets(arr){
+  const out=[];
+  for(let mask=1;mask<(1<<n);mask++){
+   let a=[];
+   for(let i=0;i<n;i++)if(mask&(1<<i))a.push(arr[i]);
+   out.push(a);
+  }
+  return out;
+ }
+ for(const cols of subsets(all)){
+  if(cols.length<1||cols.length>n-1)continue;
+  const colSet=new Set(cols);
+  let confined=0;
+  for(let colour=0;colour<n;colour++){
+   if(cellsByColour[colour].every(([r,c])=>colSet.has(c)))confined++;
+  }
+  if(confined>cols.length)return true;
+ }
+ for(const rows of subsets(all)){
+  if(rows.length<1||rows.length>n-1)continue;
+  const rowSet=new Set(rows);
+  let confined=0;
+  for(let colour=0;colour<n;colour++){
+   if(cellsByColour[colour].every(([r,c])=>rowSet.has(r)))confined++;
+  }
+  if(confined>rows.length)return true;
+ }
  return false;
 }
 function logicSolvable(n,z){
@@ -170,7 +201,7 @@ function logicSolvable(n,z){
  return qs.size===n;
 }
 function buildGeneratedPuzzle(level,seed){
- const rnd=makeRng(seed),n=level==="easy"?6:level==="medium"?8:10,maxTries=level==="hard"?1200:1500;
+ const rnd=makeRng(seed),n=level==="easy"?6:level==="medium"?8:10,maxTries=level==="hard"?1800:2200;
  let fallback=null;
  for(let t=0;t<maxTries;t++){
   const sol=generateSolution(n,rnd),z=growConnectedZones(n,sol,rnd),s=zoneSizes(z,n);
@@ -200,7 +231,7 @@ board.addEventListener("pointercancel",()=>{dragging=false;dragStart=null;dragTo
 
 function completePuzzle(){won=true;clearInterval(timerId);updateTimer();ensureProfile();const lvl=stats.levels[currentLevel],wasBest=lvl.best===null||elapsed<lvl.best;lvl.solved++;if(wasBest)lvl.best=elapsed;if(isDaily)stats.daily[todayKey()]=true;if(questMode)stats.questProgress=(stats.questProgress||0)+1;addBadge("first","First Crown");if(currentLevel==="easy")addBadge("easy1","Easy Groover");if(currentLevel==="medium")addBadge("medium1","Medium Maestro");if(currentLevel==="hard")addBadge("hard1","Queen Supreme");if(undos===0)addBadge("noUndo","Clean Sweep");if(isDaily)addBadge("daily","Daily Royal");if(elapsed<=120)addBadge("speedy","Speedy Sovereign");saveStats();status.textContent=`Groovy! Solved in ${fmt(elapsed)}.`;if(questMode){const p=Math.min(7,stats.questProgress||0);showToast(p>=7?`Road trip complete!<br>Dolly reached Scotland 🚐`:`Dolly moved on!<br>${p}/7 waypoints`)}else if(wasBest)showToast(`New ${currentLevel} record!<br>${fmt(elapsed)}`);renderStats();render()}
 function updateStatus(){if(isSolved()){completePuzzle();return}const bad=conflicts(),q=queens().length;status.textContent=bad.size?"There is a queen clash.":`${q}/${size} queens placed.`;updateTimer()}
-function loadPuzzle(daily=false,quest=false){ensureProfile();currentLevel=difficulty.value;isDaily=daily;questMode=quest;marks.clear();history=[];won=false;moves=0;undos=0;status.textContent="Building valid connected-colour puzzle…";setTimeout(()=>{const seed=daily?`${todayKey()}-${currentLevel}`:`${Date.now()}-${Math.random()}-${currentLevel}`;const p=buildGeneratedPuzzle(currentLevel,seed);if(!p){status.textContent="Couldn’t build puzzle — try New game again.";return}size=p.size;zones=p.zones;solution=p.solution;render();startTimer();renderStats();status.textContent=quest?"Quest puzzle ready — solve to move Dolly.":(daily?`Daily ${currentLevel} puzzle ready — same challenge all day.`:`Fresh ${currentLevel} puzzle ready${p.logic?" — logic-tested.":"."}`)},40)}
+function loadPuzzle(daily=false,quest=false){ensureProfile();currentLevel=difficulty.value;isDaily=daily;questMode=quest;marks.clear();history=[];won=false;moves=0;undos=0;status.textContent="Building valid connected-colour puzzle…";setTimeout(()=>{const seed=daily?`${todayKey()}-${currentLevel}`:`${Date.now()}-${Math.random()}-${currentLevel}`;const p=buildGeneratedPuzzle(currentLevel,seed);if(!p){status.textContent="Couldn’t build a puzzle this time — tap New game again.";return}size=p.size;zones=p.zones;solution=p.solution;render();startTimer();renderStats();status.textContent=quest?"Quest puzzle ready — solve to move Dolly.":(daily?`Daily ${currentLevel} puzzle ready — same challenge all day.`:`Fresh ${currentLevel} puzzle ready${p.logic?" — logic-tested.":"."}`)},40)}
 function checkWin(){if(isSolved()){completePuzzle();return}status.textContent=conflicts().size?"Not quite — at least one queen clashes.":`You need ${size} queens.`}
 function renderStats(){ensureProfile();const name=stats.player||"Player",levels=["easy","medium","hard"];document.getElementById("modalStats").innerHTML=`<div class="statBox">${name}</div><div class="statBox">Current: ${currentLevel.toUpperCase()}</div>`+levels.map(l=>{const v=stats.levels[l];return `<div class="statBox">${l.toUpperCase()} solved: ${v.solved}</div><div class="statBox">Best: ${v.best===null?"—":fmt(v.best)}</div>`}).join("");const all=[["first","First Crown"],["easy1","Easy Groover"],["medium1","Medium Maestro"],["hard1","Queen Supreme"],["noUndo","Clean Sweep"],["daily","Daily Royal"],["speedy","Speedy Sovereign"]];document.getElementById("modalBadges").innerHTML=all.map(([id,label])=>`<span class="badge ${stats.badges.includes(id)?"":"locked"}">${label}</span>`).join("");const done=Math.min(7,stats.questProgress||0);document.getElementById("questNodes").innerHTML=[1,2,3,4,5,6,7].map(i=>`<span class="node ${i<=done?"done":"locked"}">${i<=done?"👑":"○"}</span>`).join("");const stops=[[10,88],[20,69],[30,52],[45,39],[58,25],[72,17],[90,8]],pos=stops[Math.max(0,Math.min(6,done-1))]||[10,88],van=document.getElementById("camperVan");if(van){van.style.left=pos[0]+"%";van.style.top=pos[1]+"%"}}
 document.getElementById("showStats").onclick=()=>{renderStats();document.getElementById("statsModal").classList.remove("hidden")};
